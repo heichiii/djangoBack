@@ -1,6 +1,6 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from .models import Course, Profile, CourseEmployee
+from .models import Course, Profile, CourseEmployee, PublishedCourse
 from django.http import HttpResponse, JsonResponse
 import json
 import jwt
@@ -33,24 +33,6 @@ def validate_jwt_token(token):
 @csrf_exempt
 def login(request):
     if request.method == 'POST':
-        # token = request.META.get('HTTP_TOKEN')  # 从请求头部获取 token
-        # if token:
-        #     payload = validate_jwt_token(token)
-        #     if payload:
-        #         user_id = payload.get('user_id')
-        #         user = User.objects.get(id=user_id)
-        #         user_info = {
-        #             'role': user.profile.role,
-        #             'userName': user.username,
-        #             'phone': user.profile.phone,
-        #             'isLogin': True
-        #         }
-        #         print('token login')
-        #         return JsonResponse({
-        #             'code': 200,
-        #             'data': user_info,
-        #             'message': 'success'
-        #         })
 
         data = json.loads(request.body)
         username = data.get('username')
@@ -98,7 +80,7 @@ def get_user_info_view(request):
                 try:
                     user = User.objects.get(id=user_id)
                     user_info = {
-                        'userName': user.username,
+                        'username': user.username,
                         'email': user.email,
                         'id': user.profile.id,
                         'name': user.profile.name,
@@ -145,6 +127,61 @@ def get_user_info_view(request):
         })
 
 
+def update_user_info(request):
+    if request.method == 'POST':
+        token = request.META.get('HTTP_TOKEN')
+        data = json.loads(request.body)
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+
+                username = data.get('username')
+                if username != user.username and User.objects.filter(username=username).exists():
+                    return JsonResponse({'message': 'existed'}, status=400)
+
+                user.username = username
+                user.email = data.get('email')
+                user.save()
+                profile.id = data.get('id')
+                profile.name = data.get('name')
+                profile.department = data.get('department')
+                profile.position = data.get('position')
+                profile.phone = data.get('phone')
+                profile.role = data.get('role')
+                profile.save()
+                return JsonResponse({'message': 'success', 'code': 200})
+            else:
+                return JsonResponse({'message': 'error'})
+        else:
+            return JsonResponse({'message': 'error'})
+
+
+def update_password(request):
+    if request.method == 'POST':
+        token = request.META.get('HTTP_TOKEN')
+        data = json.loads(request.body)
+        original_password = data.get('current_password')
+        new_password = data.get('new_password')
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                print(user.check_password(original_password))
+                if user.check_password(original_password):
+                    user.set_password(new_password)
+                    user.save()
+                    return JsonResponse({'message': 'success', 'code': 200})
+            else:
+                return JsonResponse({'message': 'error', 'code': 401})
+        else:
+            return JsonResponse({'message': 'error', 'code': 403})
+    return JsonResponse({'message': 'error', 'code': 405})
+
+
 def register(request):
     if request.method == 'POST':
         role = request.POST.get('role')
@@ -168,25 +205,122 @@ def register(request):
         return JsonResponse({'message': 'success', 'user': profile.id})
 
 
-def get_profile(request, user_id):
+# employee
+def get_accessible_courses(request):
     if request.method == 'GET':
-        profile = Profile.objects.get(id=user_id)
-        return JsonResponse({'id': profile.id, 'name': profile.name, 'department': profile.department,
-                             'position': profile.position, 'phone': profile.phone, 'role': profile.role})
+        token = request.META.get('HTTP_TOKEN')
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+                if profile.role == 'employee':
+                    courses = Course.objects.filter(department=profile.department)
+                    data = []
+                    for course in courses:
+                        data.append(
+                            {'id': course.id, 'name': course.name, 'date': course.date, 'trainer_id': course.trainer_id,
+                             'content_url': course.content_url, 'department': course.department})
+
+                    result = {'code': 200, 'data': data, 'message': 'success'}
+                    return JsonResponse(result, safe=False)
 
 
-def update_profile(request, user_id):
-    if request.method == 'PUT':
-        user = User.objects.get(id=user_id)
-        profile = Profile.objects.get(user=user)
-        profile.id = request.POST.get('id')
-        profile.name = request.POST.get('name')
-        profile.department = request.POST.get('department')
-        profile.position = request.POST.get('position')
-        profile.phone = request.POST.get('phone')
-        profile.role = request.POST.get('role')
-        profile.save()
-        return JsonResponse({'message': 'success'})
+def select_course(request):
+    if request.method == 'GET':
+        token = request.META.get('HTTP_TOKEN')
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+                if profile.role == 'employee':
+                    action = request.GET.get('action')
+                    courseName = request.GET.get('courseName')
+                    uid = profile.id
+                    if action == 'select':
+                        course = Course.objects.get(name=courseName)
+                        CourseEmployee.objects.create(course_id=course.id, employee_id=uid)
+                        return JsonResponse({'message': 'success', 'code': 200})
+                    elif action == 'cancel':
+                        course = Course.objects.get(name=courseName)
+                        CourseEmployee.objects.filter(course_id=course.id, employee_id=uid).delete()
+                        return JsonResponse({'message': 'success', 'code': 200})
+                    else:
+                        return JsonResponse({'message': 'error', 'code': 400})
+
+
+def get_selected_courses(request):
+    if request.method == 'GET':
+        token = request.META.get('HTTP_TOKEN')
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+                if profile.role == 'employee':
+                    courses = CourseEmployee.objects.filter(employee_id=profile.id)
+                    data = []
+                    for course in courses:
+                        course = Course.objects.get(id=course.course_id)
+                        data.append(
+                            {'id': course.id, 'name': course.name, 'date': course.date, 'trainer_id': course.trainer_id,
+                             'content_url': course.content_url, 'department': course.department})
+                    result = {'code': 200, 'data': data, 'message': 'success'}
+                    return JsonResponse(result, safe=False)
+
+
+# trainer
+def get_published_courses(request):
+    if request.method == 'GET':
+        token = request.META.get('HTTP_TOKEN')
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+                if profile.role == 'trainer':
+                    courses = PublishedCourse.objects.filter(trainer_id=profile.id)
+
+                    data = []
+                    for course in courses:
+                        data.append({'id': course.course_id, 'name': course.name, 'date': course.date,
+                                     'content_url': course.content_url,
+                                     'department': course.department, 'stcnt': course.stcnt})
+                    result = {'code': 200, 'data': data, 'message': 'success'}
+                    return JsonResponse(result, safe=False)
+
+
+def publish_course(request):
+    if request.method == 'POST':
+        token = request.META.get('HTTP_TOKEN')
+        data = json.loads(request.body)
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+                if profile.role == 'trainer':
+                    id = data.get('id')
+                    name = data.get('name')
+                    date = data.get('date')
+                    trainer_id = profile.id
+                    content_url = data.get('content_url')
+                    department = data.get('department')
+
+                    course = Course.objects.create(id=id, name=name, date=date,
+                                                   trainer_id=trainer_id, content_url=content_url,
+                                                   department=department)
+                    return JsonResponse({'message': 'success', 'code': 200})
+            else:
+                return JsonResponse({'message': 'error', 'code': 401})
+        else:
+            return JsonResponse({'message': 'error', 'code': 403})
 
 
 def get_users(request):
