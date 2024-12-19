@@ -264,11 +264,11 @@ def get_selected_courses(request):
                 if profile.role == 'employee':
                     courses = CourseEmployee.objects.filter(employee_id=profile.id)
                     data = []
-                    for course in courses:
-                        course = Course.objects.get(id=course.course_id)
+                    for c in courses:
+                        course = Course.objects.get(id=c.course_id)
                         data.append(
-                            {'id': course.id, 'name': course.name, 'date': course.date, 'trainer_id': course.trainer_id,
-                             'content_url': course.content_url, 'department': course.department})
+                            {'id': course.id, 'name': course.name, 'date': course.date, 'trainer': Profile.objects.filter(id=course.trainer_id)[0].name,
+                             'content_url': course.content_url, 'department': course.department,'grade': c.grade})
                     result = {'code': 200, 'data': data, 'message': 'success'}
                     return JsonResponse(result, safe=False)
 
