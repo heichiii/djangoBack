@@ -1,6 +1,6 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
-from .models import Course, Profile, CourseEmployee, PublishedCourse
+from .models import Course, Profile, CourseEmployee, PublishedCourse, CourseProfile
 from django.http import HttpResponse, JsonResponse
 import json
 import jwt
@@ -323,62 +323,63 @@ def publish_course(request):
             return JsonResponse({'message': 'error', 'code': 403})
 
 
-def get_users(request):
+def option_course(request):
     if request.method == 'GET':
-        users = Profile.objects.all()
-        data = []
-        for user in users:
-            data.append({'id': user.id, 'name': user.name, 'department': user.department, 'position': user.position,
-                         'phone': user.phone, 'role': user.role})
-        return JsonResponse(data, safe=False)
+        token = request.META.get('HTTP_TOKEN')
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+                if profile.role == 'trainer':
+                    courses = PublishedCourse.objects.filter(trainer_id=profile.id)
+                    data = []
+                    for course in courses:
+                        data.append({'id': course.course_id, 'name': course.name})
+                    result = {'code': 200, 'data': data, 'message': 'success'}
+                    return JsonResponse(result, safe=False)
 
 
-def get_managers(request):
+def get_students(request):
     if request.method == 'GET':
-        managers = Profile.objects.filter(role='manager')
-        data = []
-        for manager in managers:
-            data.append(
-                {'id': manager.id, 'name': manager.name, 'department': manager.department, 'position': manager.position,
-                 'phone': manager.phone, 'role': manager.role})
-        return JsonResponse(data, safe=False)
+        token = request.META.get('HTTP_TOKEN')
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+                if profile.role == 'trainer':
+                    coursename = request.GET.get('coursename')
+                    data = []
+                    courses = CourseProfile.objects.filter(course_name=coursename)
+                    for course in courses:
+                        data.append(
+                            {'employee_id': course.employee_id, 'name': course.employee_name, 'grade': course.grade})
+                    result = {'code': 200, 'data': data, 'message': 'success'}
+                    return JsonResponse(result, safe=False)
 
+def set_grade(request):
+    if request.method == 'POST':
+        token = request.META.get('HTTP_TOKEN')
+        data = json.loads(request.body)
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+                if profile.role == 'trainer':
+                    course_id = data.get('course_id')
+                    employee_id = data.get('employee_id')
+                    grade = data.get('grade')
+                    course =CourseEmployee.objects.get(course_id=course_id,employee_id=employee_id)
+                    course.grade = grade
+                    course.save()
+                    return JsonResponse({'message': 'success', 'code': 200})
+            else:
+                return JsonResponse({'message': 'error', 'code': 401})
+        else:
+            return JsonResponse({'message': 'error', 'code': 403})
 
-def get_employees(request):
-    if request.method == 'GET':
-        employees = Profile.objects.filter(role='employee')
-        data = []
-        for employee in employees:
-            data.append({'id': employee.id, 'name': employee.name, 'department': employee.department,
-                         'position': employee.position,
-                         'phone': employee.phone, 'role': employee.role})
-        return JsonResponse(data, safe=False)
-
-
-def get_trainers(request):
-    if request.method == 'GET':
-        trainers = Profile.objects.filter(role='trainer')
-        data = []
-        for trainer in trainers:
-            data.append(
-                {'id': trainer.id, 'name': trainer.name, 'department': trainer.department, 'position': trainer.position,
-                 'phone': trainer.phone, 'role': trainer.role})
-        return JsonResponse(data, safe=False)
-
-
-def get_courses(request):
-    if request.method == 'GET':
-        courses = Course.objects.all()
-        data = []
-        for course in courses:
-            data.append({'id': course.id, 'name': course.name, 'date': course.date, 'trainer_id': course.trainer_id,
-                         'content_url': course.content_url, 'department': course.department})
-
-        return JsonResponse(data, safe=False)
-
-
-def get_course(request, course_id):
-    if request.method == 'GET':
-        course = Course.objects.get(id=course_id)
-        return JsonResponse({'id': course.id, 'name': course.name, 'date': course.date, 'trainer_id': course.trainer_id,
-                             'content_url': course.content_url, 'department': course.department})

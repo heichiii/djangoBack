@@ -46,4 +46,14 @@ class PublishedCourse(models.Model):
         db_table = 'published_courses'
 
 
+class CourseProfile(models.Model):
+    employee_id = models.CharField(max_length=50)
+    employee_name = models.CharField(max_length=50)
+    course_id = models.CharField(max_length=50,primary_key=True)
+    course_name = models.CharField(max_length=50)
+    grade = models.IntegerField()
+
+    class Meta:
+        managed = False
+        db_table = 'course_profile'
 # Create your models here.
