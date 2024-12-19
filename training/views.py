@@ -360,6 +360,7 @@ def get_students(request):
                     result = {'code': 200, 'data': data, 'message': 'success'}
                     return JsonResponse(result, safe=False)
 
+
 def set_grade(request):
     if request.method == 'POST':
         token = request.META.get('HTTP_TOKEN')
@@ -374,7 +375,7 @@ def set_grade(request):
                     course_id = data.get('course_id')
                     employee_id = data.get('employee_id')
                     grade = data.get('grade')
-                    course =CourseEmployee.objects.get(course_id=course_id,employee_id=employee_id)
+                    course = CourseEmployee.objects.get(course_id=course_id, employee_id=employee_id)
                     course.grade = grade
                     course.save()
                     return JsonResponse({'message': 'success', 'code': 200})
@@ -383,3 +384,71 @@ def set_grade(request):
         else:
             return JsonResponse({'message': 'error', 'code': 403})
 
+
+# manager
+def register(request):
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        role = data.get('role')
+        username = data.get('username')
+        password = data.get('password')
+        email = data.get('email')
+        if User.objects.filter(username=username).exists():
+            return JsonResponse({'message': 'existed'}, status=400)
+        if role == 'manager':
+            user = User.objects.create_superuser(username=username, password=password, email=email)
+        else:
+            user = User.objects.create_user(username=username, password=password, email=email)
+
+        id = data.get('id')
+        name = data.get('name')
+        department = data.get('department')
+        position = data.get('position')
+        phone = data.get('phone')
+        profile = Profile.objects.create(user=user, id=id, name=name, department=department, position=position,
+                                         phone=phone, role=role)
+        return JsonResponse({'message': 'success', 'user': profile.id})
+
+
+def get_users(request):
+    if request.method == 'GET':
+        token = request.META.get('HTTP_TOKEN')
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+                if profile.role == 'manager':
+                    users = Profile.objects.all()
+                    data = []
+                    for user in users:
+                        data.append({'username': user.user.username,
+                                     'email': user.user.email,
+                                     'id': user.id, 'name': user.name,
+                                     'department': user.department,
+                                     'position': user.position,
+                                     'phone': user.phone, 'role': user.role})
+                    result = {'code': 200, 'data': data, 'message': 'success'}
+                    return JsonResponse(result, safe=False)
+
+
+def delete_user(request):
+    if request.method == 'POST':
+        token = request.META.get('HTTP_TOKEN')
+        data = json.loads(request.body)
+        if token:
+            payload = validate_jwt_token(token)
+            if payload:
+                user_id = payload.get('user_id')
+                user = User.objects.get(id=user_id)
+                profile = Profile.objects.get(user=user)
+                if profile.role == 'manager':
+                    username = data.get('username')
+                    user = User.objects.get(username=username)
+                    user.delete()
+                    return JsonResponse({'message': 'success', 'code': 200})
+            else:
+                return JsonResponse({'message': 'error', 'code': 401})
+        else:
+            return JsonResponse({'message': 'error', 'code': 403})
